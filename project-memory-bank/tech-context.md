@@ -28,6 +28,10 @@ The app is fully static and offline-first by design. Nothing in the codebase mak
 
 No ESLint, Prettier, or test runner yet — avoiding unnecessary dependencies while the foundation is still being established. Revisit in Phase 7 (production polish) if automated tests become valuable for storage/import-export logic.
 
+## File size convention (from Phase 2 onward)
+
+Keep source files under ~300 lines so an AI assistant (or a human) only needs to read the specific small file relevant to a task, not a monolith. When a file approaches the limit, split it along existing seams rather than growing it further — e.g. Phase 2 split CRUD logic into `src/state/sectionOps.js`/`cardOps.js` (pure transforms, no storage/UI concerns) and split `AI-Lexicon.jsx`'s per-section rendering into `components/SectionGroup.jsx` before it crossed 300 lines. Every file in the repo is currently under 300 lines (`AI-Lexicon.jsx` is the largest at ~250); see [[system-patterns]] for the resulting module map.
+
 ## npm scripts
 
 - `npm run dev` — local dev server with HMR.

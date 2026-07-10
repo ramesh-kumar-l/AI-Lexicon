@@ -1,8 +1,11 @@
 import { useMemo, useState } from 'react';
-import { Search, ChevronDown, ChevronRight, Copy, Check, RotateCcw, Folder } from 'lucide-react';
+import { Search, RotateCcw, Archive } from 'lucide-react';
 import { useAppData } from './hooks/useAppData.js';
-import { getSectionIcon } from './lib/iconMap.js';
-import { getColorClasses } from './lib/colorMap.js';
+import Sidebar from './components/Sidebar.jsx';
+import SectionGroup from './components/SectionGroup.jsx';
+import SectionForm from './components/SectionForm.jsx';
+import CardForm from './components/CardForm.jsx';
+import ConfirmDialog from './components/ConfirmDialog.jsx';
 
 function cardMatchesQuery(card, query) {
   if (!query) return true;
@@ -31,37 +34,52 @@ async function copyText(text) {
 }
 
 export default function AILexicon() {
-  const { appData, recordCopy, resetToSeed } = useAppData();
+  const {
+    appData,
+    recordCopy,
+    resetToSeed,
+    addSection,
+    editSection,
+    archiveSection,
+    removeSection,
+    addCard,
+    editCard,
+    cloneCard,
+    archiveCard,
+    removeCard,
+  } = useAppData();
+
   const [selectedSectionId, setSelectedSectionId] = useState(null);
   const [query, setQuery] = useState('');
+  const [showArchived, setShowArchived] = useState(false);
   const [expandedIds, setExpandedIds] = useState(() => new Set());
   const [copiedId, setCopiedId] = useState(null);
+  const [modal, setModal] = useState(null);
+  const [confirmState, setConfirmState] = useState(null);
 
   const visibleSections = useMemo(
-    () => appData.sections.filter((s) => !s.archived).sort((a, b) => a.order - b.order),
-    [appData.sections]
+    () =>
+      appData.sections
+        .filter((s) => showArchived || !s.archived)
+        .sort((a, b) => a.order - b.order),
+    [appData.sections, showArchived]
   );
 
   const sectionsToRender = useMemo(() => {
-    const scoped = selectedSectionId
-      ? visibleSections.filter((s) => s.id === selectedSectionId)
-      : visibleSections;
+    const scoped = selectedSectionId ? visibleSections.filter((s) => s.id === selectedSectionId) : visibleSections;
     return scoped
       .map((section) => ({
         ...section,
-        cards: section.cards.filter((c) => !c.archived && cardMatchesQuery(c, query)),
+        cards: section.cards.filter((c) => (showArchived || !c.archived) && cardMatchesQuery(c, query)),
       }))
       .filter((section) => section.cards.length > 0 || !query);
-  }, [visibleSections, selectedSectionId, query]);
+  }, [visibleSections, selectedSectionId, query, showArchived]);
 
   function toggleExpanded(cardId) {
     setExpandedIds((prev) => {
       const next = new Set(prev);
-      if (next.has(cardId)) {
-        next.delete(cardId);
-      } else {
-        next.add(cardId);
-      }
+      if (next.has(cardId)) next.delete(cardId);
+      else next.add(cardId);
       return next;
     });
   }
@@ -78,10 +96,52 @@ export default function AILexicon() {
     }
   }
 
-  function handleReset() {
-    if (window.confirm('Reset all data back to the starter content? This cannot be undone.')) {
-      resetToSeed();
-    }
+  function requestReset() {
+    setConfirmState({
+      title: 'Reset All Data',
+      message: 'Reset all data back to the starter content? This cannot be undone.',
+      confirmLabel: 'Reset',
+      onConfirm: () => {
+        resetToSeed();
+        setConfirmState(null);
+      },
+    });
+  }
+
+  function submitSectionForm(values) {
+    if (modal.mode === 'add') addSection(values);
+    else editSection(modal.section.id, values);
+    setModal(null);
+  }
+
+  function requestDeleteSection(section) {
+    const count = section.cards.length;
+    setConfirmState({
+      title: 'Delete Section',
+      message: `Delete "${section.title}" and its ${count} card${count === 1 ? '' : 's'} permanently? This cannot be undone.`,
+      onConfirm: () => {
+        removeSection(section.id);
+        if (selectedSectionId === section.id) setSelectedSectionId(null);
+        setConfirmState(null);
+      },
+    });
+  }
+
+  function submitCardForm(values) {
+    if (modal.mode === 'add') addCard(modal.sectionId, values);
+    else editCard(modal.sectionId, modal.card.id, values);
+    setModal(null);
+  }
+
+  function requestDeleteCard(sectionId, card) {
+    setConfirmState({
+      title: 'Delete Card',
+      message: `Delete "${card.title}" permanently? This cannot be undone.`,
+      onConfirm: () => {
+        removeCard(sectionId, card.id);
+        setConfirmState(null);
+      },
+    });
   }
 
   return (
@@ -106,140 +166,88 @@ export default function AILexicon() {
         </div>
         <button
           type="button"
-          onClick={handleReset}
+          onClick={() => setShowArchived((v) => !v)}
+          aria-pressed={showArchived}
+          title={showArchived ? 'Hide archived items' : 'Show archived items'}
+          className={`ml-auto flex items-center gap-1 rounded-md px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-slate-400 ${
+            showArchived ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-100'
+          }`}
+        >
+          <Archive className="h-3.5 w-3.5" />
+          Archived
+        </button>
+        <button
+          type="button"
+          onClick={requestReset}
           title="Reset to starter data"
           aria-label="Reset to starter data"
-          className="ml-auto rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 focus:outline-none focus:ring-2 focus:ring-slate-400"
+          className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 focus:outline-none focus:ring-2 focus:ring-slate-400"
         >
           <RotateCcw className="h-4 w-4" />
         </button>
       </header>
 
       <div className="flex flex-1 overflow-hidden">
-        <nav aria-label="Sections" className="w-56 shrink-0 overflow-y-auto border-r border-slate-200 bg-white p-2">
-          <button
-            type="button"
-            onClick={() => setSelectedSectionId(null)}
-            className={`mb-1 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm ${
-              selectedSectionId === null ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'
-            }`}
-          >
-            <Folder className="h-4 w-4" />
-            All Sections
-          </button>
-          {visibleSections.map((section) => {
-            const Icon = getSectionIcon(section.iconKey);
-            const active = selectedSectionId === section.id;
-            return (
-              <button
-                key={section.id}
-                type="button"
-                onClick={() => setSelectedSectionId(section.id)}
-                className={`mb-1 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm ${
-                  active ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'
-                }`}
-              >
-                <Icon className="h-4 w-4 shrink-0" />
-                <span className="truncate">{section.title}</span>
-              </button>
-            );
-          })}
-        </nav>
+        <Sidebar
+          sections={visibleSections}
+          selectedSectionId={selectedSectionId}
+          onSelect={setSelectedSectionId}
+          onAddSection={() => setModal({ type: 'section', mode: 'add' })}
+          onEditSection={(section) => setModal({ type: 'section', mode: 'edit', section })}
+          onArchiveSection={(section) => archiveSection(section.id, !section.archived)}
+          onDeleteSection={requestDeleteSection}
+        />
 
         <main className="flex-1 overflow-y-auto p-4">
-          {sectionsToRender.length === 0 && (
+          {appData.sections.length === 0 && (
+            <p className="text-sm text-slate-500">No sections yet. Use the + button in the sidebar to add one.</p>
+          )}
+          {appData.sections.length > 0 && sectionsToRender.length === 0 && (
             <p className="text-sm text-slate-500">No cards match your search.</p>
           )}
           {sectionsToRender.map((section) => (
-            <section key={section.id} className="mb-6">
-              <h2 className="mb-2 text-sm font-semibold text-slate-600">{section.title}</h2>
-              <div className="flex flex-col gap-2">
-                {section.cards.map((card) => {
-                  const expanded = expandedIds.has(card.id);
-                  const colors = getColorClasses(section.color);
-                  return (
-                    <article
-                      key={card.id}
-                      className={`rounded-lg border border-l-4 border-slate-200 bg-white p-3 ${colors.accent}`}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => toggleExpanded(card.id)}
-                        aria-expanded={expanded}
-                        className="flex w-full items-start justify-between gap-2 text-left focus:outline-none"
-                      >
-                        <div>
-                          <h3 className="text-sm font-medium">{card.title}</h3>
-                          {!expanded && (
-                            <p className="mt-0.5 line-clamp-1 text-xs text-slate-500">{card.content}</p>
-                          )}
-                        </div>
-                        {expanded ? (
-                          <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />
-                        ) : (
-                          <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
-                        )}
-                      </button>
-
-                      {expanded && (
-                        <div className="mt-3 border-t border-slate-100 pt-3">
-                          <p className="text-sm text-slate-700">{card.content}</p>
-
-                          {card.prompt && (
-                            <div className="mt-2">
-                              <div className="mb-1 flex items-center justify-between">
-                                <span className="text-xs font-medium uppercase tracking-wide text-slate-400">
-                                  Prompt
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => handleCopy(card)}
-                                  className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-400"
-                                >
-                                  {copiedId === card.id ? (
-                                    <>
-                                      <Check className="h-3.5 w-3.5" /> Copied
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Copy className="h-3.5 w-3.5" /> Copy
-                                    </>
-                                  )}
-                                </button>
-                              </div>
-                              <pre className="whitespace-pre-wrap border-l-2 border-slate-200 pl-2 font-mono text-xs text-slate-800">
-                                {card.prompt}
-                              </pre>
-                            </div>
-                          )}
-
-                          {card.notes && <p className="mt-2 text-xs italic text-slate-500">{card.notes}</p>}
-
-                          {card.tags?.length > 0 && (
-                            <div className="mt-2 flex flex-wrap gap-1">
-                              {card.tags.map((tag) => (
-                                <span key={tag} className={`rounded-md px-1.5 py-0.5 text-[11px] ${colors.chip}`}>
-                                  {tag}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-
-                          {card.copyCount > 0 && (
-                            <p className="mt-2 text-[11px] text-slate-400">
-                              Copied {card.copyCount} time{card.copyCount === 1 ? '' : 's'}
-                            </p>
-                          )}
-                        </div>
-                      )}
-                    </article>
-                  );
-                })}
-              </div>
-            </section>
+            <SectionGroup
+              key={section.id}
+              section={section}
+              expandedIds={expandedIds}
+              copiedId={copiedId}
+              onToggleCard={toggleExpanded}
+              onCopyCard={handleCopy}
+              onEditCard={(sectionId, card) => setModal({ type: 'card', mode: 'edit', sectionId, card })}
+              onDuplicateCard={(sectionId, card) => cloneCard(sectionId, card.id)}
+              onArchiveCard={(sectionId, card) => archiveCard(sectionId, card.id, !card.archived)}
+              onDeleteCard={(sectionId, card) => requestDeleteCard(sectionId, card)}
+              onAddCard={(sectionId) => setModal({ type: 'card', mode: 'add', sectionId })}
+            />
           ))}
         </main>
       </div>
+
+      {modal?.type === 'section' && (
+        <SectionForm
+          initial={modal.mode === 'edit' ? modal.section : null}
+          onSubmit={submitSectionForm}
+          onCancel={() => setModal(null)}
+        />
+      )}
+
+      {modal?.type === 'card' && (
+        <CardForm
+          initial={modal.mode === 'edit' ? modal.card : null}
+          onSubmit={submitCardForm}
+          onCancel={() => setModal(null)}
+        />
+      )}
+
+      {confirmState && (
+        <ConfirmDialog
+          title={confirmState.title}
+          message={confirmState.message}
+          confirmLabel={confirmState.confirmLabel}
+          onConfirm={confirmState.onConfirm}
+          onCancel={() => setConfirmState(null)}
+        />
+      )}
     </div>
   );
 }

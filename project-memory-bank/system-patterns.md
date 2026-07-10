@@ -42,16 +42,33 @@ Defined in `src/data/constants.js` (schema/app version) and `src/data/seedData.j
 
 Validation helpers: `isValidAppData` → `isValidSection` → `isValidCard` (shape checks only, not deep semantic validation). `migrateAppData` is a stub for future schema-version bumps (`schemaVersion` is already threaded through everywhere so this won't require a data-shape change later).
 
-`src/hooks/useAppData.js` wraps the adapter in a hook exposing `{ appData, recordCopy(cardId), resetToSeed() }`. **`AI-Lexicon.jsx` never imports the adapter directly** — always goes through this hook. Any future storage backend (e.g. IndexedDB) swaps in behind this same hook interface.
+`src/hooks/useAppData.js` wraps the adapter in a hook exposing `{ appData, recordCopy(cardId), resetToSeed() }` plus the CRUD actions below. **`AI-Lexicon.jsx` never imports the adapter directly** — always goes through this hook. Any future storage backend (e.g. IndexedDB) swaps in behind this same hook interface.
+
+## CRUD state-transform pattern (Phase 2)
+
+`src/state/sectionOps.js` and `src/state/cardOps.js` are pure functions — `(appData, ...args) => newAppData` — with no side effects and no storage access. Each op stamps `updatedAt` and (for cards) touches the parent section's `updatedAt` too. `useAppData.js` wraps every op in a single `apply(updater)` helper that runs the transform, persists via `saveAppData`, and updates React state — so **every mutation path goes through the same save call**, there is no way to change `appData` without persisting it.
+
+- `sectionOps`: `createSection`, `updateSection`, `setSectionArchived`, `deleteSection` (hard delete, cascades — removes the section and all its cards in one array filter).
+- `cardOps`: `createCard`, `updateCard`, `duplicateCard` (inserts a `"<title> (Copy)"` card immediately after the source, resets `copyCount`/`favorite`/timestamps), `setCardArchived`, `deleteCard`, `recordCardCopy`.
+
+IDs for user-created sections/cards come from `src/lib/id.js` (`crypto.randomUUID()` with a fallback for non-secure contexts) — seed data keeps its static slugs, only new entities get generated IDs.
+
+Archive vs. delete: archiving is reversible and needs no confirmation (a header toggle reveals archived items, dimmed with an "archived" badge); deleting is permanent and always goes through `ConfirmDialog`. Section delete warns about its card count before cascading.
+
+Validation (`src/lib/validation.js`): `validateSectionInput`/`validateCardInput` return `{ valid, errors }` for required-field and max-length checks, surfaced inline per-field in the forms. `parseTags` turns a comma-separated string into a deduped, trimmed tag array.
 
 ## Component architecture
 
-`src/AI-Lexicon.jsx` is the single top-level component (mounted from `src/main.jsx`). Structure:
+`src/AI-Lexicon.jsx` is the top-level orchestrator (mounted from `src/main.jsx`) — it owns `useAppData()`, view state (selected section, search query, show-archived toggle, expanded-card set), and modal/confirm state, then composes:
 
-- Header: title/tagline, search input, reset-to-seed icon button (`window.confirm` guarded).
-- Left sidebar nav: "All Sections" + one button per section, icon from `src/lib/iconMap.js` (static `iconKey → lucide-react component` map — required because of the Tailwind v4 literal-class-scanning constraint, see [[tech-context]]).
-- Main content: cards grouped by section heading, filtered by the active section and search query.
-- Section accent/tag colors come from `src/lib/colorMap.js` (static `color → Tailwind class` map, same static-lookup reasoning).
+- `components/Sidebar.jsx` — "All Sections" + per-section nav, with hover/focus-revealed Edit/Archive/Delete icon buttons (Add Section lives in the sidebar header). Icon from `src/lib/iconMap.js` (static `iconKey → lucide-react component` map — required because of the Tailwind v4 literal-class-scanning constraint, see [[tech-context]]).
+- `components/SectionGroup.jsx` — one section's heading + "Add Card" button + its list of `CardItem`s.
+- `components/CardItem.jsx` — expand/collapse, copy-to-clipboard, and hover/focus-revealed Edit/Duplicate/Archive/Delete icon buttons.
+- `components/Modal.jsx` — generic accessible dialog: traps Escape-to-close, backdrop-click-to-close, auto-focuses the first `input`/`textarea`/`select` (falling back to `[data-autofocus]`), and restores focus to the triggering element on close.
+- `components/SectionForm.jsx` / `components/CardForm.jsx` — add/edit forms built on `Modal`, wired to `src/lib/validation.js`.
+- `components/ConfirmDialog.jsx` — built on `Modal`, used for every destructive action (section delete, card delete, reset-to-seed).
+
+Section accent/tag colors come from `src/lib/colorMap.js` (static `color → Tailwind class` map, same static-lookup reasoning as icons); both `iconMap.js` and `colorMap.js` export an `*_OPTIONS` array consumed by `SectionForm`'s dropdowns.
 
 ## Search
 

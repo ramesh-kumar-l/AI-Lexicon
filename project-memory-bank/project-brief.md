@@ -36,8 +36,8 @@ Engineers use AI daily but their best prompts, playbooks, and workflow patterns 
 
 ## Roadmap (8 phases)
 
-1. **Data model and storage foundation** — *in progress*. Seed data, storage adapter, read-only browsing UI (search, expand/collapse, copy).
-2. Editable sections and cards — CRUD with validation and confirmation for destructive actions.
+1. **Data model and storage foundation** — *done*. Seed data, storage adapter, read-only browsing UI (search, expand/collapse, copy).
+2. **Editable sections and cards** — *done*. CRUD with validation and confirmation for destructive actions.
 3. Search, filters, tags, favorites — full personal-knowledge-base features.
 4. Import, export, backup, reset — portability and trust.
 5. Prompt templates — variables like `{framework}`, `{audience}`, fill-in UI, generated output.
